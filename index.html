@@ -1,0 +1,1156 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบจัดการตารางสอน / ตารางเรียน (Class Schedule System)</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts (Prompt) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Alpine.js for lightweight reactivity -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Prompt', sans-serif;
+            background-color: #f8fafc;
+        }
+        
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            height: 6px;
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        @media print {
+            .no-print {
+                display: none !important;
+            }
+            body {
+                background: white !important;
+                color: black !important;
+            }
+            .print-container {
+                width: 100% !important;
+                max-width: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                box-shadow: none !important;
+            }
+        }
+    </style>
+</head>
+<body class="min-h-screen text-slate-800 flex flex-col" x-data="scheduleApp()" x-init="initApp()">
+
+    <!-- Loading overlay (Google Apps Script) -->
+    <div x-show="busy" x-cloak style="display:none" class="fixed inset-0 z-[60] bg-white/60 backdrop-blur-xs flex items-center justify-center no-print">
+        <div class="bg-white shadow-xl rounded-2xl px-5 py-3 flex items-center gap-3 border border-slate-200 text-sm font-semibold text-indigo-700">
+            <i class="fa-solid fa-spinner fa-spin"></i> กำลังประมวลผล...
+        </div>
+    </div>
+
+    <header class="bg-gradient-to-r from-indigo-700 via-indigo-600 to-blue-600 text-white shadow-lg no-print sticky top-0 z-30">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-col md:flex-row items-center justify-between gap-4">
+            
+            <div class="flex items-center space-x-3 w-full md:w-auto justify-between md:justify-start">
+                <div class="flex items-center space-x-3">
+                    <div class="p-2.5 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 text-yellow-300">
+                        <i class="fa-solid fa-calendar-days text-2xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-bold tracking-tight leading-tight">ระบบตารางสอน / ตารางเรียน</h1>
+                        <p class="text-xs text-indigo-100 opacity-90">Class & Teaching Schedule Management</p>
+                    </div>
+                </div>
+
+                <div class="md:hidden flex items-center gap-2">
+                    <button @click="openModal()" class="bg-yellow-400 hover:bg-yellow-500 text-slate-900 font-semibold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1 shadow-md">
+                        <i class="fa-solid fa-plus"></i> เพิ่มวิชา
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
+                <div class="relative flex-1 sm:w-64 md:w-48 lg:w-64">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                    <input type="text" x-model="searchQuery" placeholder="ค้นหาวิชา, ผู้สอน, ห้อง..." 
+                        class="w-full pl-9 pr-3 py-1.5 bg-white/10 text-white placeholder-indigo-200 border border-white/20 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-yellow-300 transition-all">
+                    <button x-show="searchQuery" @click="searchQuery = ''" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-indigo-200 hover:text-white text-xs">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+
+                <div class="bg-indigo-800/60 p-1 rounded-xl flex items-center space-x-1 border border-indigo-500/30">
+                    <button @click="activeTab = 'weekly'" :class="activeTab === 'weekly' ? 'bg-white text-indigo-900 shadow-md font-semibold' : 'text-indigo-100 hover:bg-white/10'" class="px-3 py-1.5 rounded-lg text-xs transition-all flex items-center gap-1.5">
+                        <i class="fa-solid fa-table-cells"></i> <span class="hidden sm:inline">ตารางสัปดาห์</span>
+                    </button>
+                    <button @click="activeTab = 'daily'" :class="activeTab === 'daily' ? 'bg-white text-indigo-900 shadow-md font-semibold' : 'text-indigo-100 hover:bg-white/10'" class="px-3 py-1.5 rounded-lg text-xs transition-all flex items-center gap-1.5">
+                        <i class="fa-solid fa-calendar-day"></i> <span class="hidden sm:inline">รายวัน</span>
+                    </button>
+                    <button @click="activeTab = 'list'" :class="activeTab === 'list' ? 'bg-white text-indigo-900 shadow-md font-semibold' : 'text-indigo-100 hover:bg-white/10'" class="px-3 py-1.5 rounded-lg text-xs transition-all flex items-center gap-1.5">
+                        <i class="fa-solid fa-list-check"></i> <span class="hidden sm:inline">รายชื่อวิชา</span>
+                    </button>
+                </div>
+
+                <!-- Admin Status Toggle -->
+                <div class="flex items-center gap-1.5">
+                    <template x-if="!isAdmin">
+                        <button @click="showAdminModal = true" class="bg-indigo-950/60 hover:bg-indigo-950 text-indigo-200 hover:text-white border border-indigo-400/30 px-3 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5">
+                            <i class="fa-solid fa-lock text-yellow-400"></i>
+                            <span>เข้าสู่ระบบ Admin</span>
+                        </button>
+                    </template>
+                    <template x-if="isAdmin">
+                        <div class="flex items-center gap-1">
+                            <button @click="showChangePinModal = true" class="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-400/40 px-2.5 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-1" title="เปลี่ยน PIN Admin">
+                                <i class="fa-solid fa-user-shield text-emerald-400"></i>
+                                <span>Admin</span>
+                            </button>
+                            <button @click="logoutAdmin()" class="bg-red-500/20 hover:bg-red-500/30 text-red-200 border border-red-400/30 p-2 rounded-xl text-xs transition-all" title="ออกจากระบบ Admin">
+                                <i class="fa-solid fa-right-from-bracket"></i>
+                            </button>
+                        </div>
+                    </template>
+                </div>
+
+                <button @click="openModal()" class="hidden md:flex items-center gap-1.5 bg-yellow-400 hover:bg-yellow-300 text-slate-900 font-bold px-4 py-2 rounded-xl text-xs transition-all shadow-md transform active:scale-95">
+                    <i class="fa-solid fa-plus text-sm"></i>
+                    <span>เพิ่มวิชาเรียน</span>
+                </button>
+
+                <button @click="window.print()" class="p-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs transition-all border border-white/20" title="พิมพ์ตาราง">
+                    <i class="fa-solid fa-print text-sm"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 print-container">
+
+        <div class="no-print grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+            <div class="glass-panel p-3.5 rounded-2xl shadow-sm flex items-center space-x-3 border-l-4 border-indigo-500">
+                <div class="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl">
+                    <i class="fa-solid fa-book-bookmark text-lg"></i>
+                </div>
+                <div>
+                    <p class="text-xs font-medium text-slate-500">วิชาทั้งหมด</p>
+                    <p class="text-xl font-bold text-slate-800" x-text="schedules.length + ' วิชา'"></p>
+                </div>
+            </div>
+
+            <div class="glass-panel p-3.5 rounded-2xl shadow-sm flex items-center space-x-3 border-l-4 border-emerald-500">
+                <div class="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">
+                    <i class="fa-solid fa-clock text-lg"></i>
+                </div>
+                <div>
+                    <p class="text-xs font-medium text-slate-500">ชั่วโมงสอน/สัปดาห์</p>
+                    <p class="text-xl font-bold text-slate-800" x-text="formatTotalHours()"></p>
+                </div>
+            </div>
+
+            <div class="glass-panel p-3.5 rounded-2xl shadow-sm flex items-center space-x-3 border-l-4 border-amber-500">
+                <div class="p-2.5 bg-amber-50 text-amber-600 rounded-xl">
+                    <i class="fa-solid fa-triangle-exclamation text-lg"></i>
+                </div>
+                <div>
+                    <p class="text-xs font-medium text-slate-500">วิชาที่เวลาชนกัน</p>
+                    <p class="text-xl font-bold" :class="conflicts.length > 0 ? 'text-red-600' : 'text-slate-800'" x-text="conflicts.length + ' รายการ'"></p>
+                </div>
+            </div>
+
+            <div class="glass-panel p-3.5 rounded-2xl shadow-sm flex items-center space-x-3 border-l-4 border-purple-500">
+                <div class="p-2.5 bg-purple-50 text-purple-600 rounded-xl">
+                    <i class="fa-solid fa-chalkboard-user text-lg"></i>
+                </div>
+                <div>
+                    <p class="text-xs font-medium text-slate-500">ห้องเรียนทั้งหมด</p>
+                    <p class="text-xl font-bold text-slate-800" x-text="getUniqueRoomsCount() + ' ห้อง'"></p>
+                </div>
+            </div>
+        </div>
+
+        <div x-show="conflicts.length > 0" class="no-print mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-2xl shadow-sm text-red-700 flex items-start space-x-3">
+            <i class="fa-solid fa-triangle-exclamation text-xl mt-0.5 text-red-500"></i>
+            <div class="flex-1">
+                <h3 class="font-bold text-sm">พบข้อมูลตารางเรียน/ตารางสอนชนกัน!</h3>
+                <p class="text-xs mt-1 text-red-600">มีวิชาที่ซ้อนทับกันในวันและเวลาเดียวกัน กรุณาตรวจสอบหรือแก้ไขช่วงเวลา</p>
+            </div>
+        </div>
+
+        <div x-show="activeTab === 'weekly'" class="space-y-4">
+            
+            <div class="no-print flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 rounded-2xl shadow-sm border border-slate-200">
+                <div class="flex items-center space-x-2 text-sm font-semibold text-slate-700">
+                    <i class="fa-solid fa-filter text-indigo-600"></i>
+                    <span>ตัวกรองตาราง:</span>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <select x-model="selectedTeacherFilter" class="bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium">
+                        <option value="">ครูผู้สอนทุกคน</option>
+                        <template x-for="t in uniqueTeachers" :key="t">
+                            <option :value="t" x-text="'ครู: ' + t"></option>
+                        </template>
+                    </select>
+
+                    <select x-model="selectedClass" class="bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <option value="">ทุกกลุ่มเรียน / ระดับชั้น</option>
+                        <template x-for="c in uniqueClasses" :key="c">
+                            <option :value="c" x-text="c"></option>
+                        </template>
+                    </select>
+
+                    <select x-model="selectedDayFilter" class="bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <option value="">ทุกวัน (จันทร์ - ศุกร์)</option>
+                        <template x-for="day in daysList" :key="day.id">
+                            <option :value="day.id" x-text="day.name"></option>
+                        </template>
+                    </select>
+
+                    <button @click="resetFilters()" x-show="selectedClass || selectedDayFilter || searchQuery || selectedTeacherFilter" class="text-xs text-slate-500 hover:text-indigo-600 underline px-2">
+                        ล้างตัวกรอง
+                    </button>
+                </div>
+            </div>
+
+            <div class="hidden print:block text-center mb-6">
+                <h2 class="text-2xl font-bold text-slate-900">ตารางสอน / ตารางเรียนประจำสัปดาห์ (จันทร์ - ศุกร์)</h2>
+                <p class="text-sm text-slate-600" x-text="'พิมพ์เมื่อวันที่: ' + new Date().toLocaleDateString('th-TH')"></p>
+            </div>
+
+            <div class="bg-white rounded-2xl shadow-md border border-slate-200 overflow-hidden">
+                <div class="overflow-x-auto custom-scrollbar">
+                    <table class="w-full border-collapse min-w-[950px] text-xs">
+                        <thead>
+                            <tr class="bg-slate-800 text-white">
+                                <th class="p-3 w-28 text-center border-b border-r border-slate-700 font-semibold uppercase tracking-wider sticky left-0 bg-slate-800 z-10">
+                                    วัน / คาบ
+                                </th>
+                                <template x-for="slot in timeSlots" :key="slot.periodNo">
+                                    <th class="p-2 text-center border-b border-r border-slate-700 font-medium min-w-[105px]"
+                                        :class="slot.type === 'homeroom' ? 'bg-amber-900/80' : (slot.type === 'lunch' ? 'bg-orange-900/80' : '')">
+                                        <div class="font-bold text-xs text-yellow-300" x-text="slot.label"></div>
+                                        <div class="text-[10px] text-slate-300" x-text="slot.start + ' - ' + slot.end"></div>
+                                    </th>
+                                </template>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-200">
+                            <template x-for="day in filteredDaysList" :key="day.id">
+                                <tr class="hover:bg-slate-50/50 transition-colors">
+                                    <td class="p-3 font-bold text-center border-r border-slate-200 sticky left-0 z-10" :class="day.headerBg + ' ' + day.textColor">
+                                        <div class="text-sm" x-text="day.name"></div>
+                                        <div class="text-[10px] font-normal opacity-80" x-text="day.short"></div>
+                                    </td>
+
+                                    <template x-for="(slot, slotIndex) in timeSlots" :key="slotIndex">
+                                        <td class="p-1 border-r border-slate-200 text-center relative h-28 vertical-align-top group/cell hover:bg-indigo-50/20 transition-colors"
+                                            :class="slot.type === 'lunch' ? 'bg-orange-50/20' : (slot.type === 'homeroom' ? 'bg-amber-50/20' : '')">
+                                            <div class="h-full w-full flex flex-col gap-1 min-h-[90px]">
+                                                <template x-for="item in getSubjectsForSlot(day.id, slot)" :key="item.id">
+                                                    <div @click.stop="editSubject(item)" 
+                                                         class="p-2 rounded-xl text-left border shadow-xs cursor-pointer hover:shadow-md transition-all duration-150 transform hover:-translate-y-0.5 group relative flex flex-col justify-between h-full"
+                                                         :class="item.color || 'bg-blue-50 border-blue-200 text-blue-900'">
+                                                        
+                                                        <div class="flex items-center justify-between gap-1 mb-1">
+                                                            <span class="font-bold text-[11px] truncate tracking-wide" x-text="item.code"></span>
+                                                            <span x-show="item.room" class="bg-white/80 backdrop-blur-xs text-[9px] px-1.5 py-0.5 rounded-md font-semibold text-slate-700 shadow-2xs border border-black/5" x-text="item.room"></span>
+                                                        </div>
+
+                                                        <div class="font-semibold text-xs leading-snug line-clamp-2 mb-1" x-text="item.name"></div>
+
+                                                        <div class="mt-auto pt-1 border-t border-black/10 flex items-center justify-between text-[10px] text-slate-600 font-medium">
+                                                            <span class="truncate max-w-[70px]" :class="item.substituteTeacher ? 'text-amber-700 font-bold' : ''" x-text="item.substituteTeacher ? 'แทน: ' + item.substituteTeacher : (item.instructor || '-')"></span>
+                                                            <span class="font-semibold" x-text="item.className"></span>
+                                                        </div>
+
+                                                        <div class="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 bg-white/90 backdrop-blur-xs rounded-lg p-0.5 shadow-xs border border-slate-200">
+                                                            <button @click.stop="editSubject(item)" class="p-1 text-indigo-600 hover:text-indigo-800 rounded-md hover:bg-indigo-50" title="แก้ไขคาบนี้"><i class="fa-solid fa-pen text-[10px]"></i></button>
+                                                            <button @click.stop="deleteSubject(item.id)" class="p-1 text-rose-600 hover:text-rose-800 rounded-md hover:bg-rose-50" title="ลบวิชานี้"><i class="fa-solid fa-trash text-[10px]"></i></button>
+                                                        </div>
+
+                                                        <div x-show="item.substituteTeacher" class="absolute -top-1.5 -left-1.5 bg-amber-500 text-white text-[8px] font-bold px-1 rounded-md shadow-xs" title="มีครูสอนแทนในคาบนี้">
+                                                            สอนแทน
+                                                        </div>
+
+                                                        <div x-show="isConflicting(item.id)" class="absolute -top-1.5 -right-1.5 bg-red-600 text-white text-[9px] w-5 h-5 rounded-full flex items-center justify-center font-bold shadow-md animate-bounce" title="เวลาเรียนชนกับวิชาอื่น!">
+                                                            !
+                                                        </div>
+                                                    </div>
+                                                </template>
+
+                                                <div x-show="getSubjectsForSlot(day.id, slot).length === 0" 
+                                                     @click="openModalForSlot(day.id, slot.start, slot.end)"
+                                                     class="h-full min-h-[80px] w-full rounded-xl border-2 border-dashed transition-all flex flex-col items-center justify-center p-2 cursor-pointer group/empty"
+                                                     :class="slot.type === 'lunch' ? 'border-orange-200 bg-orange-50/40 hover:bg-orange-100/50 text-orange-600' : (slot.type === 'homeroom' ? 'border-amber-200 bg-amber-50/40 hover:bg-amber-100/50 text-amber-600' : 'border-slate-200 bg-slate-50/50 hover:bg-indigo-50/40 hover:border-indigo-400 text-slate-400 hover:text-indigo-600')">
+                                                    <div class="w-6 h-6 rounded-full flex items-center justify-center transition-all shadow-2xs mb-1"
+                                                         :class="slot.type === 'lunch' ? 'bg-orange-100 text-orange-600' : (slot.type === 'homeroom' ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 group-hover/empty:bg-indigo-600 group-hover/empty:text-white')">
+                                                        <i :class="slot.type === 'lunch' ? 'fa-solid fa-utensils text-xs' : (slot.type === 'homeroom' ? 'fa-solid fa-users text-xs' : 'fa-solid fa-plus text-xs')"></i>
+                                                    </div>
+                                                    <span class="text-[10px] font-semibold" x-text="slot.type === 'lunch' ? 'พักกลางวัน' : (slot.type === 'homeroom' ? 'โฮมรูม (ว่าง)' : 'ว่าง (กดเพื่อเพิ่ม)')"></span>
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </template>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div x-show="activeTab === 'daily'" class="space-y-4">
+            <div class="no-print flex overflow-x-auto space-x-2 p-2 bg-white rounded-2xl shadow-sm border border-slate-200 custom-scrollbar">
+                <template x-for="day in daysList" :key="day.id">
+                    <button @click="selectedDailyTab = day.id" 
+                            :class="selectedDailyTab === day.id ? 'bg-indigo-600 text-white shadow-md font-bold' : 'bg-slate-100 text-slate-700 hover:bg-slate-200 font-medium'"
+                            class="px-4 py-2 rounded-xl text-xs whitespace-nowrap transition-all flex items-center space-x-2">
+                        <span class="w-2 h-2 rounded-full" :class="day.badge"></span>
+                        <span x-text="day.name"></span>
+                        <span class="bg-black/10 text-xs px-1.5 py-0.5 rounded-full" x-text="getSubjectsForDay(day.id).length"></span>
+                    </button>
+                </template>
+            </div>
+
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+                <div class="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-800" x-text="'ตารางสอน - ' + getDayName(selectedDailyTab)"></h2>
+                        <p class="text-xs text-slate-500 mt-0.5" x-text="'วิชาทั้งหมด ' + getSubjectsForDay(selectedDailyTab).length + ' รายการ'"></p>
+                    </div>
+                    <button @click="openModalWithDay(selectedDailyTab)" class="no-print bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1">
+                        <i class="fa-solid fa-plus"></i> เพิ่มวิชาในวันนี้
+                    </button>
+                </div>
+
+                <div x-show="getSubjectsForDay(selectedDailyTab).length > 0" class="space-y-4 relative before:absolute before:inset-0 before:left-24 before:w-0.5 before:bg-slate-200">
+                    <template x-for="item in getSubjectsForDay(selectedDailyTab)" :key="item.id">
+                        <div class="flex items-start space-x-4 group">
+                            <div class="w-20 text-right pt-2 font-mono text-xs font-bold text-slate-600 flex-shrink-0">
+                                <div x-text="item.startTime"></div>
+                                <div class="text-[10px] text-slate-400" x-text="item.endTime"></div>
+                            </div>
+
+                            <div class="w-4 h-4 rounded-full bg-indigo-600 border-4 border-white shadow-md z-10 mt-2 flex-shrink-0"></div>
+
+                            <div class="flex-1 bg-slate-50 hover:bg-white border border-slate-200 hover:border-indigo-300 rounded-2xl p-4 shadow-xs hover:shadow-md transition-all cursor-pointer" @click="editSubject(item)">
+                                <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                    <div class="flex items-center space-x-2">
+                                        <span class="px-2.5 py-0.5 bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold" x-text="item.code"></span>
+                                        <h3 class="font-bold text-slate-800 text-sm" x-text="item.name"></h3>
+                                    </div>
+                                    <span x-show="item.className" class="text-xs font-semibold px-2 py-0.5 bg-slate-200 text-slate-700 rounded-md" x-text="'ชั้น ' + item.className"></span>
+                                </div>
+
+                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-slate-600 mt-3 pt-3 border-t border-slate-200/60">
+                                    <div class="flex items-center space-x-1.5">
+                                        <i class="fa-solid fa-chalkboard-user text-indigo-500"></i>
+                                        <span x-text="'ผู้สอน: ' + (item.instructor || '-')"></span>
+                                    </div>
+                                    <div class="flex items-center space-x-1.5">
+                                        <i class="fa-solid fa-location-dot text-rose-500"></i>
+                                        <span x-text="'ห้อง: ' + (item.room || '-')"></span>
+                                    </div>
+                                    <div class="flex items-center space-x-1.5">
+                                        <i class="fa-solid fa-clock text-amber-500"></i>
+                                        <span x-text="'ระยะเวลา: ' + formatDuration(item.startTime, item.endTime)"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+
+                <div x-show="getSubjectsForDay(selectedDailyTab).length === 0" class="text-center py-12 text-slate-400">
+                    <i class="fa-solid fa-mug-hot text-4xl mb-3 text-slate-300"></i>
+                    <p class="text-sm font-medium">ไม่มีคาบเรียนในวันนี้</p>
+                    <button @click="openModalWithDay(selectedDailyTab)" class="mt-3 text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-xl font-medium hover:bg-indigo-700 transition-all">
+                        + เพิ่มวิชาใหม่
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div x-show="activeTab === 'list'" class="space-y-4">
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+                <div class="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-800">รายการวิชาทั้งหมดในตาราง</h2>
+                        <p class="text-xs text-slate-500">คุณสามารถจัดการ เพิ่ม แก้ไข หรือลบรายวิชาได้จากหน้านี้</p>
+                    </div>
+
+                    <div class="flex items-center space-x-2">
+                        <button @click="loadDemoData()" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition-all flex items-center space-x-1.5">
+                            <i class="fa-solid fa-wand-magic-sparkles text-amber-500"></i>
+                            <span>โหลดข้อมูลตัวอย่าง</span>
+                        </button>
+                        <button @click="clearAllData()" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-semibold rounded-xl transition-all flex items-center space-x-1.5">
+                            <i class="fa-solid fa-trash-can"></i>
+                            <span>ล้างตารางทั้งหมด</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs border-collapse">
+                        <thead>
+                            <tr class="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                                <th class="p-3 rounded-l-xl">วัน</th>
+                                <th class="p-3">เวลา</th>
+                                <th class="p-3">รหัสวิชา</th>
+                                <th class="p-3">ชื่อวิชา / กิจกรรม</th>
+                                <th class="p-3">ครูผู้สอน / สอนแทน</th>
+                                <th class="p-3">ห้อง</th>
+                                <th class="p-3">ระดับชั้น</th>
+                                <th class="p-3 text-right rounded-r-xl">จัดการ</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <template x-for="item in filteredSchedules" :key="item.id">
+                                <tr class="hover:bg-slate-50/80 transition-colors">
+                                    <td class="p-3 font-semibold" x-text="getDayName(item.dayId)"></td>
+                                    <td class="p-3 font-mono text-slate-600" x-text="item.startTime + ' - ' + item.endTime"></td>
+                                    <td class="p-3 font-bold text-indigo-600" x-text="item.code"></td>
+                                    <td class="p-3 font-medium text-slate-800" x-text="item.name"></td>
+                                    <td class="p-3" x-text="item.substituteTeacher ? 'แทน: ' + item.substituteTeacher : (item.instructor || '-')"></td>
+                                    <td class="p-3" x-text="item.room || '-'"></td>
+                                    <td class="p-3" x-text="item.className || '-'"></td>
+                                    <td class="p-3 text-right space-x-1">
+                                        <button @click="editSubject(item)" class="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg" title="แก้ไข">
+                                            <i class="fa-solid fa-pen"></i>
+                                        </button>
+                                        <button @click="deleteSubject(item.id)" class="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg" title="ลบ">
+                                            <i class="fa-solid fa-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <div x-show="showAdminModal" 
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 no-print" 
+         style="display: none;">
+        
+        <div class="bg-white rounded-3xl max-w-sm w-full shadow-2xl overflow-hidden border border-slate-100" @click.away="showAdminModal = false">
+            <div class="bg-slate-900 text-white p-5 text-center relative">
+                <div class="w-12 h-12 bg-indigo-600 text-yellow-300 rounded-2xl flex items-center justify-center mx-auto mb-2 text-xl shadow-md">
+                    <i class="fa-solid fa-user-shield"></i>
+                </div>
+                <h3 class="font-bold text-base">เข้าสู่ระบบผู้ดูแลระบบ (Admin)</h3>
+                <p class="text-xs text-slate-300 mt-0.5">กรอกรหัส PIN เพื่อสิทธิ์การแก้ไขข้อมูล</p>
+                <button @click="showAdminModal = false" class="absolute top-4 right-4 text-slate-400 hover:text-white">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <form @submit.prevent="loginAdmin()" class="p-6 space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1.5 text-center">รหัสผ่าน PIN (เริ่มต้นคือ 1234)</label>
+                    <input type="password" x-model="inputPin" maxlength="8" autofocus placeholder="••••" required
+                        class="w-full text-center text-2xl tracking-widest font-mono py-2.5 border border-slate-300 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    <p x-show="pinError" class="text-rose-600 text-xs text-center mt-2 font-medium" x-text="pinError"></p>
+                </div>
+
+                <div class="flex items-center gap-2 pt-2">
+                    <button type="button" @click="showAdminModal = false" class="w-1/2 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-all">
+                        ยกเลิก
+                    </button>
+                    <button type="submit" class="w-1/2 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md transition-all">
+                        เข้าสู่ระบบ
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div x-show="showChangePinModal" 
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 no-print" 
+         style="display: none;">
+        
+        <div class="bg-white rounded-3xl max-w-sm w-full shadow-2xl overflow-hidden border border-slate-100" @click.away="showChangePinModal = false">
+            <div class="bg-emerald-700 text-white p-5 text-center relative">
+                <div class="w-12 h-12 bg-white/20 text-white rounded-2xl flex items-center justify-center mx-auto mb-2 text-xl shadow-md">
+                    <i class="fa-solid fa-key"></i>
+                </div>
+                <h3 class="font-bold text-base">ตั้งรหัสผ่าน Admin ใหม่</h3>
+                <p class="text-xs text-emerald-100 mt-0.5">เปลี่ยนรหัส PIN สำหรับผู้ดูแลระบบ</p>
+                <button @click="showChangePinModal = false" class="absolute top-4 right-4 text-emerald-200 hover:text-white">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <form @submit.prevent="changeAdminPin()" class="p-6 space-y-3">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">รหัส PIN ใหม่</label>
+                    <input type="password" x-model="newPin" maxlength="8" required placeholder="กรอกรหัสใหม่"
+                        class="w-full text-center text-lg font-mono py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">ยืนยันรหัส PIN ใหม่</label>
+                    <input type="password" x-model="confirmNewPin" maxlength="8" required placeholder="กรอกรหัสใหม่อีกครั้ง"
+                        class="w-full text-center text-lg font-mono py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                    <p x-show="changePinError" class="text-rose-600 text-xs text-center mt-1 font-medium" x-text="changePinError"></p>
+                </div>
+
+                <div class="flex items-center gap-2 pt-3">
+                    <button type="button" @click="showChangePinModal = false" class="w-1/2 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-all">
+                        ยกเลิก
+                    </button>
+                    <button type="submit" class="w-1/2 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md transition-all">
+                        บันทึก PIN ใหม่
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div x-show="showModal" 
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 no-print" 
+         style="display: none;">
+        
+        <div class="bg-white rounded-3xl max-w-lg w-full shadow-2xl overflow-hidden border border-slate-100" @click.away="showModal = false">
+            <div class="bg-gradient-to-r from-indigo-600 to-blue-600 text-white p-5 flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid text-yellow-300" :class="editingId ? 'fa-pen-to-square' : 'fa-plus-circle'"></i>
+                    <div>
+                        <h3 class="font-bold text-lg" x-text="editingId ? 'แก้ไขข้อมูลวิชาในคาบนี้' : 'ลงวิชาในคาบเรียนว่าง'"></h3>
+                        <p class="text-xs text-indigo-100 font-normal" x-text="getDayName(formData.dayId) + ' เวลา ' + formData.startTime + ' - ' + formData.endTime + ' น.'"></p>
+                    </div>
+                </div>
+                <button @click="showModal = false" class="text-white/80 hover:text-white text-xl">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <form @submit.prevent="saveSubject()" class="p-6 space-y-4">
+                <!-- Duration Preset Selectors -->
+                <div class="bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                    <label class="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                        <span><i class="fa-solid fa-stopwatch text-indigo-600 mr-1"></i> ปรับระยะเวลา / จำนวนคาบของวิชานี้:</span>
+                        <span class="text-indigo-600 font-bold" x-text="formatDuration(formData.startTime, formData.endTime)"></span>
+                    </label>
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                        <button type="button" @click="setSubjectDurationMinutes(50)" class="px-2 py-1.5 bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl text-xs font-medium text-slate-700 transition-all text-center">
+                            1 คาบ (50 นาที)
+                        </button>
+                        <button type="button" @click="setSubjectDurationMinutes(100)" class="px-2 py-1.5 bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl text-xs font-medium text-slate-700 transition-all text-center">
+                            2 คาบ (1 ชม. 40 นาที)
+                        </button>
+                        <button type="button" @click="setSubjectDurationMinutes(60)" class="px-2 py-1.5 bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl text-xs font-medium text-slate-700 transition-all text-center">
+                            1 ชั่วโมงเต็ม
+                        </button>
+                        <button type="button" @click="setSubjectDurationMinutes(120)" class="px-2 py-1.5 bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl text-xs font-medium text-slate-700 transition-all text-center">
+                            2 ชั่วโมงเต็ม
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Code & Name -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">รหัสวิชา *</label>
+                        <input type="text" x-model="formData.code" required placeholder="เช่น ค21101" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    </div>
+                    <div class="sm:col-span-2">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">ชื่อวิชา / กิจกรรม *</label>
+                        <input type="text" x-model="formData.name" required placeholder="เช่น คณิตศาสตร์พื้นฐาน" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    </div>
+                </div>
+
+                <!-- Instructor & Substitute -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">ครูผู้สอนหลัก</label>
+                        <input type="text" x-model="formData.instructor" placeholder="ครูสมชาย" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-amber-700 mb-1 flex items-center justify-between">
+                            <span>ครูสอนแทน (ถ้ามี)</span>
+                            <i class="fa-solid fa-user-pen"></i>
+                        </label>
+                        <input type="text" x-model="formData.substituteTeacher" placeholder="เช่น ครูวิภา (สอนแทน)" class="w-full px-3 py-2 border border-amber-300 bg-amber-50/50 rounded-xl text-xs focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                    </div>
+                </div>
+
+                <!-- Room & Class -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">ห้องเรียน / สถานที่</label>
+                        <input type="text" x-model="formData.room" placeholder="3201" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">ชั้น/กลุ่มเรียน</label>
+                        <input type="text" x-model="formData.className" placeholder="ม.1/1" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    </div>
+                </div>
+
+                <!-- Note -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">หมายเหตุคาบเรียน</label>
+                    <input type="text" x-model="formData.note" placeholder="เช่น สอบย่อยประจำหน่วย" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                </div>
+
+                <!-- Day & Custom Time -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">ประจำวัน *</label>
+                        <select x-model="formData.dayId" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                            <template x-for="d in daysList" :key="d.id">
+                                <option :value="d.id" x-text="d.name"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">เวลาเริ่ม *</label>
+                        <input type="time" x-model="formData.startTime" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">เวลาสิ้นสุด *</label>
+                        <input type="time" x-model="formData.endTime" required class="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    </div>
+                </div>
+
+                <!-- Color Theme Picker -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1.5">สีการ์ดวิชา</label>
+                    <div class="flex flex-wrap gap-2">
+                        <template x-for="colorOption in colorOptions" :key="colorOption.value">
+                            <button type="button" 
+                                    @click="formData.color = colorOption.value"
+                                    class="w-7 h-7 rounded-full border-2 transition-transform transform hover:scale-110 flex items-center justify-center"
+                                    :class="[colorOption.preview, formData.color === colorOption.value ? 'border-indigo-600 scale-110 ring-2 ring-indigo-300' : 'border-transparent']">
+                                <i x-show="formData.color === colorOption.value" class="fa-solid fa-check text-[10px] text-slate-800"></i>
+                            </button>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Modal Actions -->
+                <div class="flex items-center justify-end space-x-2 pt-4 border-t border-slate-100">
+                    <button type="button" @click="showModal = false" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-all">
+                        ยกเลิก
+                    </button>
+                    <button type="submit" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-md transition-all">
+                        <span x-text="editingId ? 'บันทึกการแก้ไข' : 'เพิ่มวิชาเรียน'"></span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // URL ของ Google Apps Script Web App (ใช้เมื่อเปิดไฟล์นี้จากนอก Apps Script เช่น GitHub Pages / โฮสต์ของตัวเอง)
+        const API_URL = 'https://script.google.com/macros/s/AKfycbwmwHcyQqZb-DeFNJwwvqpAzSxoruqcn8r7UQd97Q6zPOjq-a8rsFlT2H9uXBfYep55dA/exec';
+
+        // ถ้าไม่ได้รันใน Apps Script ให้จำลอง google.script.run ด้วย fetch ไปที่ API_URL
+        if (typeof google === 'undefined' || !google.script || !google.script.run) {
+            (function () {
+                function make(ok, fail) {
+                    return new Proxy({}, {
+                        get: function (_, prop) {
+                            if (prop === 'withSuccessHandler') return function (f) { return make(f, fail); };
+                            if (prop === 'withFailureHandler') return function (f) { return make(ok, f); };
+                            return function () {
+                                const args = Array.prototype.slice.call(arguments);
+                                fetch(API_URL, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                                    body: JSON.stringify({ fn: prop, args: args })
+                                })
+                                .then(function (r) { return r.json(); })
+                                .then(function (res) {
+                                    if (!res.ok) throw new Error(res.error || 'เกิดข้อผิดพลาด');
+                                    return res.data;
+                                })
+                                .then(
+                                    function (d) { if (ok) ok(d); },
+                                    function (e) { if (fail) fail(e); else console.error(e); }
+                                );
+                            };
+                        }
+                    });
+                }
+                window.google = { script: { run: make(null, null) } };
+            })();
+        }
+
+        function scheduleApp() {
+            return {
+                activeTab: 'weekly',
+                selectedDailyTab: 1,
+                searchQuery: '',
+                selectedClass: '',
+                selectedDayFilter: '',
+                selectedTeacherFilter: '',
+                showModal: false,
+                editingId: null,
+
+                // Admin Authentication State
+                isAdmin: false,
+                busy: false,
+                adminPinSession: '', // PIN ที่ผ่านการตรวจแล้ว ใช้ส่งไปกับทุกคำสั่งเขียนข้อมูล
+                showAdminModal: false,
+                showChangePinModal: false,
+                inputPin: '',
+                pinError: '',
+                newPin: '',
+                confirmNewPin: '',
+                changePinError: '',
+
+                schedules: [],
+
+                daysList: [
+                    { id: 1, name: 'วันจันทร์', short: 'จ.', headerBg: 'bg-yellow-100', textColor: 'text-yellow-800', badge: 'bg-yellow-400' },
+                    { id: 2, name: 'วันอังคาร', short: 'อ.', headerBg: 'bg-pink-100', textColor: 'text-pink-800', badge: 'bg-pink-400' },
+                    { id: 3, name: 'วันพุธ', short: 'พ.', headerBg: 'bg-emerald-100', textColor: 'text-emerald-800', badge: 'bg-emerald-400' },
+                    { id: 4, name: 'วันพฤหัสบดี', short: 'พฤ.', headerBg: 'bg-orange-100', textColor: 'text-orange-800', badge: 'bg-orange-400' },
+                    { id: 5, name: 'วันศุกร์', short: 'ศ.', headerBg: 'bg-blue-100', textColor: 'text-blue-800', badge: 'bg-blue-400' }
+                ],
+
+                timeSlots: [
+                    { periodNo: 0, label: 'คาบ 0 (โฮมรูม)', start: '08:00', end: '08:30', type: 'homeroom' },
+                    { periodNo: 1, label: 'คาบ 1 (เช้า)', start: '08:30', end: '09:30', type: 'class' },
+                    { periodNo: 2, label: 'คาบ 2 (เช้า)', start: '09:30', end: '10:30', type: 'class' },
+                    { periodNo: 3, label: 'คาบ 3 (เช้า)', start: '10:30', end: '11:30', type: 'class' },
+                    { periodNo: 4, label: 'คาบ 4 (เช้า)', start: '11:30', end: '12:30', type: 'class' },
+                    { periodNo: 5, label: 'คาบ 5 (พักกลางวัน)', start: '12:30', end: '13:30', type: 'lunch' },
+                    { periodNo: 6, label: 'คาบ 6 (บ่าย)', start: '13:30', end: '14:30', type: 'class' },
+                    { periodNo: 7, label: 'คาบ 7 (บ่าย)', start: '14:30', end: '15:30', type: 'class' },
+                    { periodNo: 8, label: 'คาบ 8 (บ่าย)', start: '15:30', end: '16:30', type: 'class' }
+                ],
+
+                colorOptions: [
+                    { value: 'bg-blue-50 border-blue-200 text-blue-900', preview: 'bg-blue-200' },
+                    { value: 'bg-purple-50 border-purple-200 text-purple-900', preview: 'bg-purple-200' },
+                    { value: 'bg-emerald-50 border-emerald-200 text-emerald-900', preview: 'bg-emerald-200' },
+                    { value: 'bg-amber-50 border-amber-200 text-amber-900', preview: 'bg-amber-200' },
+                    { value: 'bg-rose-50 border-rose-200 text-rose-900', preview: 'bg-rose-200' },
+                    { value: 'bg-cyan-50 border-cyan-200 text-cyan-900', preview: 'bg-cyan-200' },
+                    { value: 'bg-indigo-50 border-indigo-200 text-indigo-900', preview: 'bg-indigo-200' }
+                ],
+
+                formData: {
+                    code: '',
+                    name: '',
+                    instructor: '',
+                    substituteTeacher: '',
+                    note: '',
+                    room: '',
+                    className: '',
+                    dayId: 1,
+                    startTime: '08:30',
+                    endTime: '09:30',
+                    color: 'bg-blue-50 border-blue-200 text-blue-900'
+                },
+
+                initApp() {
+                    try {
+                        if (sessionStorage.getItem('class_schedules_is_admin') === 'true') {
+                            this.adminPinSession = sessionStorage.getItem('class_schedules_admin_pin') || '';
+                            this.isAdmin = !!this.adminPinSession;
+                        }
+                    } catch (e) {}
+                    this.loadSchedules();
+                    // รีเฟรชอัตโนมัติทุก 60 วินาที เพื่อเห็นการแก้ไขจากเครื่องอื่น
+                    setInterval(() => {
+                        if (!this.busy && !this.showModal) this.loadSchedules(true);
+                    }, 60000);
+                },
+
+                loadSchedules(silent = false) {
+                    if (!silent) this.busy = true;
+                    google.script.run
+                        .withSuccessHandler((data) => {
+                            this.schedules = data || [];
+                            this.busy = false;
+                        })
+                        .withFailureHandler((err) => {
+                            this.busy = false;
+                            if (!silent) alert('โหลดข้อมูลไม่สำเร็จ: ' + (err.message || err));
+                        })
+                        .getSchedules();
+                },
+
+                handleError(err) {
+                    this.busy = false;
+                    const msg = (err && err.message) ? err.message : String(err);
+                    if (msg.indexOf('PIN') !== -1) this.logoutAdmin();
+                    alert(msg);
+                },
+
+                loginAdmin() {
+                    const pin = this.inputPin;
+                    this.busy = true;
+                    google.script.run
+                        .withSuccessHandler((ok) => {
+                            this.busy = false;
+                            if (ok) {
+                                this.isAdmin = true;
+                                this.adminPinSession = pin;
+                                try {
+                                    sessionStorage.setItem('class_schedules_is_admin', 'true');
+                                    sessionStorage.setItem('class_schedules_admin_pin', pin);
+                                } catch (e) {}
+                                this.showAdminModal = false;
+                                this.inputPin = '';
+                                this.pinError = '';
+                            } else {
+                                this.pinError = 'รหัสผ่าน PIN ไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง';
+                            }
+                        })
+                        .withFailureHandler((err) => {
+                            this.busy = false;
+                            this.pinError = (err && err.message) ? err.message : 'เกิดข้อผิดพลาด';
+                        })
+                        .verifyPin(pin);
+                },
+
+                logoutAdmin() {
+                    this.isAdmin = false;
+                    this.adminPinSession = '';
+                    try {
+                        sessionStorage.setItem('class_schedules_is_admin', 'false');
+                        sessionStorage.removeItem('class_schedules_admin_pin');
+                    } catch (e) {}
+                },
+
+                changeAdminPin() {
+                    if (this.newPin.length < 4) {
+                        this.changePinError = 'รหัส PIN ต้องมีความยาวอย่างน้อย 4 หลัก';
+                        return;
+                    }
+                    if (this.newPin !== this.confirmNewPin) {
+                        this.changePinError = 'รหัส PIN ทั้งสองช่องไม่ตรงกัน';
+                        return;
+                    }
+                    const np = this.newPin;
+                    this.busy = true;
+                    google.script.run
+                        .withSuccessHandler(() => {
+                            this.busy = false;
+                            this.adminPinSession = np;
+                            try { sessionStorage.setItem('class_schedules_admin_pin', np); } catch (e) {}
+                            this.showChangePinModal = false;
+                            this.newPin = '';
+                            this.confirmNewPin = '';
+                            this.changePinError = '';
+                        })
+                        .withFailureHandler((err) => {
+                            this.busy = false;
+                            this.changePinError = (err && err.message) ? err.message : 'เกิดข้อผิดพลาด';
+                        })
+                        .changePin(this.adminPinSession, np);
+                },
+
+                checkAdminPermission(callback) {
+                    if (this.isAdmin) {
+                        callback();
+                    } else {
+                        this.inputPin = '';
+                        this.pinError = '';
+                        this.showAdminModal = true;
+                    }
+                },
+
+                saveToStorage() {
+                    // ใช้กับ "โหลดข้อมูลตัวอย่าง" และ "ล้างตารางทั้งหมด" — แทนที่ข้อมูลทั้งชีต
+                    this.busy = true;
+                    google.script.run
+                        .withSuccessHandler(() => { this.busy = false; })
+                        .withFailureHandler((err) => { this.handleError(err); this.loadSchedules(true); })
+                        .replaceAll(this.adminPinSession, JSON.parse(JSON.stringify(this.schedules)));
+                },
+
+                loadDemoData() {
+                    this.checkAdminPermission(() => {
+                        this.schedules = [
+                            { id: '1', code: 'HR001', name: 'กิจกรรมโฮมรูม', instructor: 'ครูสมชาย', substituteTeacher: '', note: 'เช็คชื่อและแจ้งข่าวสาร', room: '3201', className: 'ม.1/1', dayId: 1, startTime: '08:00', endTime: '08:30', color: 'bg-amber-50 border-amber-200 text-amber-900' },
+                            { id: '2', code: 'ค21101', name: 'คณิตศาสตร์พื้นฐาน', instructor: 'ครูสมชาย', substituteTeacher: '', note: '', room: '3201', className: 'ม.1/1', dayId: 1, startTime: '08:30', endTime: '09:30', color: 'bg-blue-50 border-blue-200 text-blue-900' },
+                            { id: '3', code: 'ว21101', name: 'วิทยาศาสตร์ 1', instructor: 'ครูวิภา', substituteTeacher: '', note: '', room: 'lab-2', className: 'ม.1/1', dayId: 1, startTime: '09:30', endTime: '10:30', color: 'bg-emerald-50 border-emerald-200 text-emerald-900' },
+                            { id: '4', code: 'ท21101', name: 'ภาษาไทย 1', instructor: 'ครูเพ็ญศรี', substituteTeacher: '', note: '', room: '3201', className: 'ม.1/1', dayId: 1, startTime: '10:30', endTime: '11:30', color: 'bg-purple-50 border-purple-200 text-purple-900' },
+                            { id: '5', code: 'อ21101', name: 'ภาษาอังกฤษ 1', instructor: 'Teacher John', substituteTeacher: '', note: '', room: '3201', className: 'ม.1/1', dayId: 1, startTime: '11:30', endTime: '12:30', color: 'bg-cyan-50 border-cyan-200 text-cyan-900' },
+                            { id: '6', code: 'ส21101', name: 'สังคมศึกษา', instructor: 'ครูประเสริฐ', substituteTeacher: '', note: '', room: '3201', className: 'ม.1/1', dayId: 1, startTime: '13:30', endTime: '14:30', color: 'bg-rose-50 border-rose-200 text-rose-900' },
+                            { id: '7', code: 'พ21101', name: 'สุขศึกษาและพลศึกษา', instructor: 'ครูวีระ', substituteTeacher: '', note: '', room: 'สนามฟุตบอล', className: 'ม.1/1', dayId: 2, startTime: '13:30', endTime: '15:30', color: 'bg-emerald-50 border-emerald-200 text-emerald-900' },
+                            { id: '8', code: 'ศ21101', name: 'ศิลปะและดนตรี', instructor: 'ครูชัยวัฒน์', substituteTeacher: '', note: '', room: 'ห้องศิลปะ', className: 'ม.1/1', dayId: 5, startTime: '09:30', endTime: '11:30', color: 'bg-indigo-50 border-indigo-200 text-indigo-900' }
+                        ];
+                        this.saveToStorage();
+                    });
+                },
+
+                clearAllData() {
+                    this.checkAdminPermission(() => {
+                        this.schedules = [];
+                        this.saveToStorage();
+                    });
+                },
+
+                get filteredSchedules() {
+                    return this.schedules.filter(item => {
+                        if (this.selectedDayFilter && item.dayId != this.selectedDayFilter) return false;
+                        if (this.selectedClass && item.className !== this.selectedClass) return false;
+                        if (this.selectedTeacherFilter && item.instructor !== this.selectedTeacherFilter && item.substituteTeacher !== this.selectedTeacherFilter) return false;
+                        if (this.searchQuery) {
+                            const q = this.searchQuery.toLowerCase();
+                            const code = (item.code || '').toLowerCase();
+                            const name = (item.name || '').toLowerCase();
+                            const inst = (item.instructor || '').toLowerCase();
+                            const subst = (item.substituteTeacher || '').toLowerCase();
+                            const room = (item.room || '').toLowerCase();
+                            return code.includes(q) || name.includes(q) || inst.includes(q) || subst.includes(q) || room.includes(q);
+                        }
+                        return true;
+                    });
+                },
+
+                get filteredDaysList() {
+                    if (this.selectedDayFilter !== '') {
+                        return this.daysList.filter(d => d.id == this.selectedDayFilter);
+                    }
+                    return this.daysList;
+                },
+
+                get uniqueTeachers() {
+                    const teachers = [];
+                    this.schedules.forEach(s => {
+                        if (s.instructor) teachers.push(s.instructor);
+                        if (s.substituteTeacher) teachers.push(s.substituteTeacher);
+                    });
+                    return [...new Set(teachers)];
+                },
+
+                get uniqueClasses() {
+                    const classes = [];
+                    this.schedules.forEach(s => {
+                        if (s.className) classes.push(s.className);
+                    });
+                    return [...new Set(classes)];
+                },
+
+                get conflicts() {
+                    const conflictIds = new Set();
+                    for (let i = 0; i < this.schedules.length; i++) {
+                        for (let j = i + 1; j < this.schedules.length; j++) {
+                            const a = this.schedules[i];
+                            const b = this.schedules[j];
+                            if (a.dayId == b.dayId) {
+                                const overlap = (a.startTime < b.endTime && a.endTime > b.startTime);
+                                if (overlap) {
+                                    if (a.className === b.className || (a.room && a.room === b.room) || (a.instructor && a.instructor === b.instructor)) {
+                                        conflictIds.add(a.id);
+                                        conflictIds.add(b.id);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return Array.from(conflictIds);
+                },
+
+                isConflicting(id) {
+                    return this.conflicts.includes(id);
+                },
+
+                getSubjectsForSlot(dayId, slot) {
+                    return this.filteredSchedules.filter(item => {
+                        if (item.dayId != dayId) return false;
+                        return (item.startTime < slot.end && item.endTime > slot.start);
+                    });
+                },
+
+                getSubjectsForDay(dayId) {
+                    return this.filteredSchedules
+                        .filter(item => item.dayId == dayId)
+                        .sort((a, b) => a.startTime.localeCompare(b.startTime));
+                },
+
+                getDayName(dayId) {
+                    const d = this.daysList.find(item => item.id == dayId);
+                    return d ? d.name : '';
+                },
+
+                formatDuration(start, end) {
+                    if (!start || !end) return '0 นาที';
+                    const [sH, sM] = start.split(':').map(Number);
+                    const [eH, eM] = end.split(':').map(Number);
+                    const totalMins = (eH * 60 + eM) - (sH * 60 + sM);
+                    if (totalMins <= 0) return '0 นาที';
+
+                    const hours = Math.floor(totalMins / 60);
+                    const mins = totalMins % 60;
+
+                    if (hours > 0 && mins > 0) return `${hours} ชม. ${mins} นาที`;
+                    if (hours > 0) return `${hours} ชั่วโมง`;
+                    return `${mins} นาที`;
+                },
+
+                formatTotalHours() {
+                    let totalMins = 0;
+                    this.schedules.forEach(s => {
+                        const [sH, sM] = s.startTime.split(':').map(Number);
+                        const [eH, eM] = s.endTime.split(':').map(Number);
+                        const dur = (eH * 60 + eM) - (sH * 60 + sM);
+                        if (dur > 0) totalMins += dur;
+                    });
+                    const h = Math.floor(totalMins / 60);
+                    const m = totalMins % 60;
+                    return m > 0 ? `${h} ชม. ${m} น.` : `${h} ชม.`;
+                },
+
+                setSubjectDurationMinutes(minutes) {
+                    if (!this.formData.startTime) this.formData.startTime = '08:30';
+                    const [sH, sM] = this.formData.startTime.split(':').map(Number);
+                    const endTotalMins = (sH * 60 + sM) + minutes;
+                    const endH = Math.floor(endTotalMins / 60) % 24;
+                    const endM = endTotalMins % 60;
+                    this.formData.endTime = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+                },
+
+                getUniqueRoomsCount() {
+                    const rooms = new Set();
+                    this.schedules.forEach(s => {
+                        if (s.room) rooms.add(s.room);
+                    });
+                    return rooms.size;
+                },
+
+                openModal() {
+                    this.checkAdminPermission(() => {
+                        this.editingId = null;
+                        this.formData = {
+                            code: '',
+                            name: '',
+                            instructor: '',
+                            substituteTeacher: '',
+                            note: '',
+                            room: '',
+                            className: '',
+                            dayId: 1,
+                            startTime: '08:30',
+                            endTime: '09:30',
+                            color: 'bg-blue-50 border-blue-200 text-blue-900'
+                        };
+                        this.showModal = true;
+                    });
+                },
+
+                openModalForSlot(dayId, startTime, endTime) {
+                    this.checkAdminPermission(() => {
+                        this.editingId = null;
+                        this.formData = {
+                            code: '',
+                            name: '',
+                            instructor: '',
+                            substituteTeacher: '',
+                            note: '',
+                            room: '',
+                            className: '',
+                            dayId: dayId,
+                            startTime: startTime,
+                            endTime: endTime,
+                            color: 'bg-blue-50 border-blue-200 text-blue-900'
+                        };
+                        this.showModal = true;
+                    });
+                },
+
+                openModalWithDay(dayId) {
+                    this.openModal();
+                    this.formData.dayId = dayId;
+                },
+
+                editSubject(item) {
+                    this.checkAdminPermission(() => {
+                        this.editingId = item.id;
+                        this.formData = JSON.parse(JSON.stringify(item));
+                        this.showModal = true;
+                    });
+                },
+
+                saveSubject() {
+                    const isEdit = !!this.editingId;
+                    const item = JSON.parse(JSON.stringify({
+                        ...this.formData,
+                        id: isEdit ? this.editingId : Date.now().toString(),
+                        dayId: Number(this.formData.dayId)
+                    }));
+                    this.busy = true;
+                    google.script.run
+                        .withSuccessHandler((saved) => {
+                            const s = saved || item;
+                            const index = this.schedules.findIndex(x => x.id === s.id);
+                            if (index !== -1) this.schedules[index] = s;
+                            else this.schedules.push(s);
+                            this.busy = false;
+                            this.showModal = false;
+                        })
+                        .withFailureHandler((err) => this.handleError(err))
+                        .saveSchedule(this.adminPinSession, item);
+                },
+
+                deleteSubject(id) {
+                    this.checkAdminPermission(() => {
+                        this.busy = true;
+                        google.script.run
+                            .withSuccessHandler(() => {
+                                this.schedules = this.schedules.filter(s => s.id !== id);
+                                this.busy = false;
+                            })
+                            .withFailureHandler((err) => this.handleError(err))
+                            .deleteSchedule(this.adminPinSession, id);
+                    });
+                },
+
+                resetFilters() {
+                    this.searchQuery = '';
+                    this.selectedClass = '';
+                    this.selectedDayFilter = '';
+                    this.selectedTeacherFilter = '';
+                }
+            };
+        }
+    </script>
+</body>
+</html>
